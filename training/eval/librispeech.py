@@ -60,6 +60,11 @@ class EvalResults(BaseModel):
     step: int
     num_items: int
     wer: float
+    # Corpus WER is insertion-dominated: one runaway generation can outweigh
+    # every setting under test, so the median and the tail count are what
+    # actually rank two evals against each other.
+    wer_median: float
+    wer_over_50: int
     sim: float | None
     utmos: float | None
     silent: int
@@ -524,11 +529,16 @@ def main():
     hyps = [r["hyp"] for r in records if r["ref"]]
     sims = [r["sim"] for r in records if "sim" in r]
     moses = [r["utmos"] for r in records if "utmos" in r]
+    per_item = sorted(
+        jiwer.wer(r, h) if r.strip() else 0.0 for r, h in zip(refs, hyps, strict=True)
+    )
     results = EvalResults(
         asr=args.asr,
         step=step,
         num_items=len(records),
         wer=jiwer.wer(refs, hyps),
+        wer_median=per_item[len(per_item) // 2] if per_item else 0.0,
+        wer_over_50=sum(w > 0.5 for w in per_item),
         sim=sum(sims) / len(sims) if sims else None,
         utmos=sum(moses) / len(moses) if moses else None,
         silent=sum(r["silent"] for r in records),

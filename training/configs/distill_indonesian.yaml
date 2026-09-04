@@ -1,0 +1,65 @@
+# Distil the Indonesian 24L teacher into a 6-layer student, baking guidance in.
+#
+# This fixes two things at once. The published pocket_tts/ package has no
+# classifier-free guidance at all (cfg_coef lives only in
+# training/modules/model.py), so the teacher's --cfg 2.0 numbers describe a path
+# `pocket-tts generate` cannot take. distill_cfg_coef 2.0 folds that guidance
+# into the weights, so the student reaches guided quality in the one backbone
+# pass the CLI actually runs -- and 6 layers is what makes it pocket-sized.
+model_config: pocket_tts/config/english.yaml  # 6-layer student, n_bins already 4000
+model_overrides:
+  flow_lm.lookup_table.tokenizer_path: data/tokenizer_id.model
+start_from_pretrained: false
+distill_cfg_coef: 2.0
+distill_teacher_config: pocket_tts/config/english.yaml
+distill_teacher_overrides:
+  flow_lm.transformer.num_layers: 24
+  flow_lm.lookup_table.tokenizer_path: data/tokenizer_id.model
+distill_teacher_weights: runs/indonesian/checkpoint_00087500.pt
+
+data:
+  train_jsonl: data/id_train_punct.jsonl
+  valid_jsonl: data/id_valid_punct.jsonl
+  max_duration_sec: 30.0
+  max_voice_prompt_sec: 5.0
+  loader_procs: 6
+  # v3.1.0 precomputes Mimi latents for train_jsonl on first run. Worth the
+  # one-time encode of 502 h here: distillation runs teacher and student every
+  # step, so the GPU is the bottleneck, not the loader.
+  precompute: true
+
+flow:
+  type: lsd
+  kwargs: {}
+
+# The teacher's targets are always fully conditioned and the student never runs
+# a null branch, so dropping conditioning would ask it to predict a conditioned
+# target from a null input.
+text_dropout: 0.0
+voice_dropout: 0.0
+
+optim:
+  lr: 4e-4
+  schedule: cosine
+  warmup_steps: 1000
+
+run_dir: runs/distill_indonesian
+# Teacher and student are both resident, so the micro-batch is half what the
+# 24L finetune used on this 15 GB T4. Effective batch stays 64.
+batch_size: 2
+grad_accum_steps: 32
+# The upstream recipe runs 200k, but WER is at parity by ~50k and this is one
+# shared T4 at ~0.29 steps/s: 200k would be 8 days for acoustic polish that
+# 16 kHz source audio caps anyway.
+max_steps: 50000
+ema_decay: 0.9999
+log_freq: 50
+valid_freq: 2500
+ckpt_freq: 2500
+num_ckpt_keep: 3  # upstream keeps 999; each is 2.5 GB and disk is at 79%
+sample_freq: 2500
+sample_cfg_coef: 1.0  # the student needs no guidance -- that is the point
+sample_sentences:
+  - Selamat pagi, semoga hari Anda menyenangkan.
+  - Ibu kota Indonesia adalah Jakarta, kota terbesar di Asia Tenggara.
+  - Model ini hasil distilasi, jadi cukup satu lintasan tanpa guidance.

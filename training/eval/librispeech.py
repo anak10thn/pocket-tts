@@ -78,6 +78,8 @@ def eval_dir_name(args: argparse.Namespace, step: int) -> str:
     name = f"libri_eval_step{step}_t{args.temp}_cfg{args.cfg}"
     if not args.use_ema:
         name += "_raw"
+    if getattr(args, "eos_threshold", -1.0) != -1.0:
+        name += f"_eos{args.eos_threshold}"
     if args.num_items:
         name += f"_n{args.num_items}"
     if args.seed:
@@ -132,7 +134,7 @@ def load_16k(path: str, device: torch.device) -> torch.Tensor:
 
 
 def build_transcriber(
-    asr_name: str, device: torch.device
+    asr_name: str, device: torch.device, language: str | None = None
 ) -> Callable[[list[npt.NDArray[Any]]], list[str]]:
     """Granite is a chat-prompted speech-seq2seq model; whisper is a pipeline."""
     if "granite" in asr_name:
@@ -183,6 +185,9 @@ def build_transcriber(
             [{"array": w, "sampling_rate": 16000} for w in wavs],  # ty: ignore[invalid-argument-type]  -- batched call
             return_timestamps=True,
             batch_size=len(wavs),
+            # Pinning the language stops Whisper detecting per clip, which on
+            # short non-English audio can pick the wrong one and translate.
+            **({"generate_kwargs": {"language": language}} if language else {}),
         )
         return [o["text"] for o in outs]
 
@@ -257,7 +262,7 @@ def score_items(
     # non-English eval wants the language-agnostic one (what Whisper's own
     # multilingual evals use).
     normalize = EnglishTextNormalizer() if args.normalizer == "english" else BasicTextNormalizer()
-    transcribe = build_transcriber(args.asr, device)
+    transcribe = build_transcriber(args.asr, device, getattr(args, "asr_language", None))
 
     spk = None
     if not args.skip_sim:
@@ -445,6 +450,12 @@ def main():
         "lower it if you run out of memory, 1 falls back to the per-item path)",
     )
     parser.add_argument("--seed", type=int, default=0, help="sampling seed, per shard")
+    parser.add_argument(
+        "--asr-language",
+        default=None,
+        help="pin the ASR's language (e.g. 'id'); default lets Whisper detect per clip, "
+        "which mislabels short non-English utterances and translates them",
+    )
     parser.add_argument(
         "--normalizer",
         choices=("english", "basic"),

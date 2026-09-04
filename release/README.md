@@ -31,18 +31,29 @@ Runs about 2x faster than real time on a Tesla T4.
 
 ```bash
 uvx pocket-tts generate \
-    --config hf://anak10thn/pocket-tts-indonesian/config.yaml \
+    --config hf://anak10thn/pocket-tts-indonesian/config.yaml@6160f98e7a6e71e3aa3e063e582d7827518c632f \
     --voice your_voice.wav \
     --text "Selamat pagi, semoga hari Anda menyenangkan." \
     --output-path out.wav
 ```
+
+Pinning the revision is what the upstream README does and what you want for
+anything reproducible; drop the `@...` to follow this repo's main branch.
+Omitting `--voice` is fine too — it falls back to
+[alba's audio](https://huggingface.co/kyutai/tts-voices/blob/main/alba-mackenna/casual.wav),
+which this model clones like any other.
+
+Verified against pocket-tts 3.1.0 and against the current published wheel via
+`uvx`, both from a cleared cache.
 
 From Python:
 
 ```python
 from pocket_tts import TTSModel
 
-model = TTSModel.load_model(config="hf://anak10thn/pocket-tts-indonesian/config.yaml")
+model = TTSModel.load_model(
+    config="hf://anak10thn/pocket-tts-indonesian/config.yaml"
+)
 state = model.get_state_for_audio_prompt("your_voice.wav")
 audio = model.generate_audio(state, "Selamat pagi, semoga hari Anda menyenangkan.")
 ```
@@ -113,7 +124,10 @@ loss was flat from step 42,500 on.
   via 4 x 16 gradient accumulation, lr 2e-4 constant, ~0.29 steps/s, 8 days.
 
 Code, including the data pipeline and the fp16 patch:
-[anak10thn/pocket-tts, branch `indonesian`](https://github.com/anak10thn/pocket-tts/tree/indonesian).
+[anak10thn/pocket-tts, branch `indonesian`](https://github.com/anak10thn/pocket-tts/tree/indonesian),
+merged up to pocket-tts 3.1.0. It is kept on the fork rather than upstream by
+[agreement with the maintainers](https://github.com/kyutai-labs/pocket-tts/pull/293);
+the README entry is [kyutai-labs/pocket-tts#294](https://github.com/kyutai-labs/pocket-tts/pull/294).
 
 ## Limitations
 

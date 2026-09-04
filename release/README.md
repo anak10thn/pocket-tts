@@ -16,7 +16,7 @@ datasets:
 - LEMAS-Project/LEMAS-Dataset-train
 ---
 
-# Pocket TTS Indonesian (24L)
+# Pocket TTS Indonesian (24L teacher)
 
 Indonesian text-to-speech with voice cloning, built on
 [kyutai/pocket-tts](https://huggingface.co/kyutai/pocket-tts). A 24-layer
@@ -24,8 +24,15 @@ teacher finetuned from the released English weights with a fresh Indonesian
 tokenizer, on 502 hours of [LEMAS](https://huggingface.co/datasets/LEMAS-Project/LEMAS-Dataset-train)
 Indonesian speech.
 
-Clone a voice from a few seconds of audio and have it speak any Indonesian text.
-Runs about 2x faster than real time on a Tesla T4.
+> **This card was corrected on 2026-09-04, and the numbers below are weaker
+> than what it claimed before.** An earlier version headlined WER 23.18% and
+> said a sweep had put the best `--eos-threshold` at -4.0. Both were wrong:
+> the first was measured with classifier-free guidance, which the shipped
+> `pocket-tts` CLI cannot do, and the second came from a sweep run on the first
+> 60 items of the eval list rather than a random sample. See
+> [Evaluation](#evaluation) for what is actually measured and what is still
+> uncertain. A distilled 6-layer student is training and will supersede this
+> model; it is the one to wait for if you need dependable numbers.
 
 ## Usage
 
@@ -34,17 +41,19 @@ uvx pocket-tts generate \
     --config hf://anak10thn/pocket-tts-indonesian/config.yaml@6160f98e7a6e71e3aa3e063e582d7827518c632f \
     --voice your_voice.wav \
     --text "Selamat pagi, semoga hari Anda menyenangkan." \
+    --eos-threshold -5.0 \
     --output-path out.wav
 ```
 
-Pinning the revision is what the upstream README does and what you want for
-anything reproducible; drop the `@...` to follow this repo's main branch.
-Omitting `--voice` is fine too — it falls back to
-[alba's audio](https://huggingface.co/kyutai/tts-voices/blob/main/alba-mackenna/casual.wav),
-which this model clones like any other.
+`--eos-threshold -5.0` is deliberate: the CLI's default of -4.0 scored 34.41%
+corpus WER against -5.0's 20.82% on the same 153 items. Do not read that gap as
+precise — see below — but -4.0 was the worst of the five values measured, so it
+is worth overriding.
 
-Verified against pocket-tts 3.1.0 and against the current published wheel via
-`uvx`, both from a cleared cache.
+Omitting `--voice` is fine; it falls back to
+[alba's audio](https://huggingface.co/kyutai/tts-voices/blob/main/alba-mackenna/casual.wav),
+which this model clones like any other. Verified against pocket-tts 3.1.0 and
+the current published wheel via `uvx`, both from a cleared cache.
 
 From Python:
 
@@ -65,46 +74,65 @@ produce identical tokens.
 **Write numbers as words** (`lima belas`, not `15`). The training transcripts
 spell them out, so digits are out-of-vocabulary.
 
-`--eos-threshold` defaults to -4.0, which is what this model was tuned at. Less
-negative makes it run past the end of your text; a sweep at step 75,000 put the
-minimum at -4.0 (WER 23.5%) against -2.0 (29.8%).
-
 ## Evaluation
 
 153 cross-sentence pairs over 116 speakers from the LEMAS Indonesian eval
-split, none of whose recordings appear in training. Whisper-large-v3 for ASR,
-language-agnostic text normalization, `--temp 0.3 --cfg 2.0 --n-steps 1`.
+split, none of whose recordings appear in training. Whisper-large-v3,
+language-agnostic normalization, `--temp 0.3 --n-steps 1`, step 87,500.
 
-| | step 37,500 | **step 87,500** | released English 6L (for scale) |
+**What the shipped CLI produces** (no guidance — `pocket_tts/` has no
+`cfg_coef` anywhere):
+
+| `--eos-threshold` | corpus WER | median per-item WER | items over 50% |
 |---|---|---|---|
-| WER | 23.78% | **23.18%** | 0.90% (English, clean corpus) |
-| speaker similarity | 0.939 | **0.941** | 0.922 |
-| UTMOS | 2.57 | **2.63** | 4.36 |
-| silent / no-EOS generations | 0 / 0 | **0 / 0** | — |
+| -3.0 | 23.45% | not retained | — |
+| -4.0 (CLI default) | 34.41% | not retained | — |
+| **-5.0** | **20.82%** | not retained | — |
+| -6.0 | 37.81% | 17.65% | 13 / 153 |
+| -7.0 | 39.62% | 36.36% | 48 / 153 |
 
-**Read the WER against the corpus, not against the English number.** The same
-ASR transcribing the *real* recordings of this eval set scores **10.08%** — the
-reference transcripts are subtitle-derived and imperfect, and the audio is
-YouTube-sourced. 23.18% is the model's number against a 10.08% floor, not
-against zero. The English row is a different corpus (clean read speech) and
-different language; it is here for scale, not as a fair comparison.
+Speaker similarity 0.918–0.927 and UTMOS 2.32–2.45 across those settings.
 
-**Speaker similarity is this model's strength.** At 0.941 it is above the
-released English model (0.922) and above kyutai's best 24-layer English teacher
-trained on 31,700 hours (0.929). LEMAS is thousands of YouTube speakers rather
-than a handful of audiobook narrators, so the model learned to imitate arbitrary
-voices rather than a house style.
+**Corpus WER here is not a reliable number, and neither was the 23.18% this
+card used to headline.** It sums insertions over the list, so one generation
+that repeats itself past the end of the text outweighs everything else: the
+worst single item in the -6.0 run scored 1833% and 13 items of 153 accounted
+for the gap between 18.99% and 37.81%. Adjacent eos settings swing it by 14
+points. The -6.0 and -7.0 rows show why the median matters — their corpus
+numbers are 2 points apart while their medians differ by a factor of two, and
+their failure modes are opposite (one runaway generation versus 48
+truncations). Medians for the other rows were lost because the eval directory
+name did not include eos, so each run overwrote the previous one's per-item
+records; both that and the median reporting are fixed in the code linked below,
+and the sweep will be redone properly on the distilled student.
 
-**Audio quality is capped by the corpus, not by training.** UTMOS 2.63 against
+**With guidance** (`--cfg 2.0`, reachable only through
+`training/eval/librispeech.py`, not the CLI): WER 23.18%, speaker similarity
+0.941, UTMOS 2.63. Guidance trades intelligibility for voice fidelity here
+rather than being strictly better — and it costs two backbone passes per step,
+which is what the distillation now running is for.
+
+**Read WER against this corpus, not against the English models.** The same ASR
+transcribing the eval set's *real* recordings scores 10.08%: the reference
+transcripts are subtitle-derived and the audio is YouTube-sourced. The released
+English model's 0.90% is a different language on clean read speech.
+
+**Speaker similarity is this model's strength.** 0.941 with guidance and
+~0.927 without, against 0.922 for the released English model and 0.929 for
+kyutai's best 24-layer English teacher trained on 31,700 hours. LEMAS is
+thousands of YouTube speakers rather than a handful of audiobook narrators, so
+the model learned to imitate arbitrary voices rather than a house style. This
+is the one claim here that has held up through every re-measurement.
+
+**Audio quality is capped by the corpus, not by training.** UTMOS ~2.4 against
 4.36 for the English model, because LEMAS audio is 16 kHz while Mimi runs at
-24 kHz: there is no energy above 8 kHz for the model to learn. Expect output
-that sounds like a decent phone call or a YouTube video, not a studio recording.
-No amount of further training moves this — mixing in 48 kHz Indonesian speech
-(e.g. Common Voice) would.
+24 kHz: there is no energy above 8 kHz to learn. Expect a decent phone call or
+YouTube video, not a studio recording. Further training does not move this;
+mixing in 48 kHz Indonesian speech would.
 
-Training was stopped at step 87,500 of a planned 250,000 because it had
-plateaued: WER moved 0.6 points between steps 37,500 and 75,000, and validation
-loss was flat from step 42,500 on.
+Training stopped at step 87,500 of a planned 250,000 because it had plateaued:
+validation loss was flat from step 42,500 on, and WER moved 0.6 points between
+steps 37,500 and 75,000.
 
 ## Training
 
@@ -123,15 +151,22 @@ loss was flat from step 42,500 on.
   no bf16 tensor cores — bf16 measures 11x slower there). Effective batch 64
   via 4 x 16 gradient accumulation, lr 2e-4 constant, ~0.29 steps/s, 8 days.
 
-Code, including the data pipeline and the fp16 patch:
+Code, including the data pipeline, the fp16 patch and the eval fixes described
+above:
 [anak10thn/pocket-tts, branch `indonesian`](https://github.com/anak10thn/pocket-tts/tree/indonesian),
 merged up to pocket-tts 3.1.0. It is kept on the fork rather than upstream by
 [agreement with the maintainers](https://github.com/kyutai-labs/pocket-tts/pull/293);
-the README entry is [kyutai-labs/pocket-tts#294](https://github.com/kyutai-labs/pocket-tts/pull/294).
+the README entry is [kyutai-labs/pocket-tts#294](https://github.com/kyutai-labs/pocket-tts/pull/294),
+currently on hold pending the numbers above being remeasured.
 
 ## Limitations
 
-- 16 kHz-sourced audio: band-limited output, UTMOS 2.63.
+- 16 kHz-sourced audio: band-limited output, UTMOS ~2.4.
+- Corpus WER is unstable on this eval set; a handful of runaway generations
+  dominate it. Treat any single WER figure here as provisional.
+- The CLI cannot do classifier-free guidance, so the model's better speaker
+  similarity and UTMOS are not reachable from `pocket-tts generate` until the
+  distilled student lands.
 - Digits are out-of-vocabulary; spell numbers out.
 - Trained on YouTube speech — mostly conversational and broadcast Indonesian.
   Formal narration is out of domain.

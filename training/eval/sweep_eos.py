@@ -45,6 +45,11 @@ def run_one(args: argparse.Namespace, eos: float) -> dict[str, Any] | None:
         "--cfg", str(args.cfg),
         "--eos-threshold", str(eos),
         "--batch-size", str(args.batch_size),
+        # Whisper's feature extractor pads to exactly 30 s of mel frames, and a
+        # generation that reaches the cap yields 3001 where it expects 3000,
+        # killing the run. Staying under it costs nothing here: no reference
+        # utterance in this eval is anywhere near 30 s.
+        "--max-sec", str(args.max_sec),
     ]
     if args.use_ema:
         cmd.append("--use-ema")
@@ -74,6 +79,7 @@ def main() -> None:
     ap.add_argument("--temp", type=float, default=0.3)
     ap.add_argument("--n-steps", type=int, default=1)
     ap.add_argument("--batch-size", type=int, default=2)
+    ap.add_argument("--max-sec", type=float, default=29.0)
     ap.add_argument("--use-ema", action="store_true", default=True)
     ap.add_argument("--no-use-ema", dest="use_ema", action="store_false")
     ap.add_argument("--checkpoint", default=None)
@@ -98,13 +104,30 @@ def main() -> None:
 
     rows.sort(key=lambda r: r["wer_median"])
     print("\n=== ranked by median per-item WER (the robust one) ===")
-    print(f"{'eos':>6} {'median':>8} {'corpus':>8} {'over50':>7} {'sim':>6} {'utmos':>6}")
+    print(
+        f"{'eos':>6} {'median':>8} {'corpus':>8} {'over50':>7} {'silent':>7} "
+        f"{'no_eos':>7} {'sim':>6} {'utmos':>6}"
+    )
     for r in rows:
         print(
             f"{r['eos']:>6} {r['wer_median']:>7.2%} {r['wer']:>7.2%} "
-            f"{r['wer_over_50']:>7} {r['sim']:>6.3f} {r['utmos']:>6.2f}"
+            f"{r['wer_over_50']:>7} {r['silent']:>7} {r['no_eos']:>7} "
+            f"{r['sim']:>6.3f} {r['utmos']:>6.2f}"
         )
-    best = rows[0]
+
+    # A setting that stays silent on some inputs can still win on the median:
+    # silence is scored as one item at 100%, and a handful of those does not
+    # move a 153-item median. Nobody wants the setting that answers 88% of the
+    # time, so those are ranked behind anything that speaks reliably.
+    speaks = [r for r in rows if r["silent"] <= 0.02 * r["num_items"]]
+    best = (speaks or rows)[0]
+    if speaks and speaks[0] is not rows[0]:
+        dropped = [r for r in rows if r not in speaks]
+        print(
+            "\nignoring "
+            + ", ".join(f"eos {r['eos']} ({r['silent']}/{r['num_items']} silent)" for r in dropped)
+            + " -- a lower median does not help if the model will not speak"
+        )
     print(f"\nbest eos {best['eos']}: median {best['wer_median']:.2%}, corpus {best['wer']:.2%}")
     if args.out:
         Path(args.out).write_text(json.dumps(rows, indent=2))

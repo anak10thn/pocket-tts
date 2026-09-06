@@ -31,7 +31,7 @@ Two models in this repo. **Use the 6-layer one.**
 | size | **438 MB** | 1.27 GB |
 | speed on CPU | **2.23x real time** | 0.69x |
 | median WER | **12.50%** | 16.67% |
-| speaker similarity | **0.938** | 0.927 |
+| speaker similarity | **0.938** | 0.927 | 
 | UTMOS | **2.68** | 2.36 |
 
 The student was distilled from the teacher with guidance baked in
@@ -121,6 +121,39 @@ The student's full eos sweep, since the shape matters more than any single row:
 | -7.0 | 10.00% | 22 | 18 | 0 | 0.932 | 2.73 |
 | -8.0 | 45.45% | 71 | 63 | 0 | 0.932 | 2.79 |
 
+### Long text
+
+One paired example, not a benchmark: a 73-word formal speech passage, same
+voice prompt and text for both models, each at its own best `--eos-threshold`.
+
+| | student 6L | teacher 24L |
+|---|---|---|
+| WER | **4.11%** | 26.03% |
+| deleted words | 3 | 17 |
+| audio length | 26.8 s | 33.3 s |
+| generations hitting the length cap without EOS | 0 | 1 of 3 chunks |
+
+The student's 4.11% is far below its 12.50% median on the eval set, which is
+the eval set's fault rather than a surprise: those reference transcripts are
+subtitle-derived, and the same ASR scores 10.08% on their real audio. On clean,
+properly punctuated text the model does considerably better than the evaluation
+suggests.
+
+The teacher failed on a repeated structure, dropped a clause and then produced
+non-words:
+
+```
+text:       ...bukan hanya soal angka, tetapi soal bagaimana manfaatnya
+            dirasakan sampai ke desa, sampai ke pasar, sampai ke meja makan...
+student 6L: ...bukan hanya soal angka, tetapi soal bagaimana manfaatnya
+            dirasakan sampai ke pasar, sampai ke meja makan...
+teacher 24L: ...bukan hanya soal angka. Sampai kebesar, sampai kebasar, sampai ke...
+```
+
+Both models can drop one item from a long enumeration — the student lost
+"sampai ke desa" here. Split lists into separate sentences if you need every
+item.
+
 **Read the medians, not the corpus WER.** Corpus WER sums insertions over the
 list, so one generation that repeats itself past the end of the text outweighs
 whatever is under test; on this eval set adjacent eos settings swing it by 14
@@ -136,11 +169,33 @@ transcripts are subtitle-derived and the audio is YouTube-sourced. The student's
 12.50% median sits close to that floor. The released English model's 0.90% is a
 different language on clean read speech.
 
-**Speaker similarity is this model's strength.** 0.938 for the student against
-0.922 for the released English model and 0.929 for kyutai's best 24-layer
-English teacher trained on 31,700 hours. LEMAS is thousands of YouTube speakers
-rather than a handful of audiobook narrators, so the model learned to imitate
-arbitrary voices rather than a house style.
+### Voice cloning: works, but it flattens voices
+
+The 0.938 figure needs its anchors, and an earlier version of this card quoted
+it against the English models' 0.922 as if that were a fair comparison. It is
+not: x-vector cosines are not comparable across corpora, and on 16 kHz YouTube
+audio the whole scale is compressed. Measured on this eval set:
+
+| | cosine |
+|---|---|
+| two real recordings of the **same** speaker | 0.954 |
+| a generation against **its own** prompt | 0.932 |
+| two generations from **different** prompts | 0.939 |
+| two real recordings of **different** speakers | 0.888 / 0.752 |
+
+(0.888 is the four prompts used in the cloning test; 0.752 is 40 random
+different-speaker pairs across the set.)
+
+Read down that table. A generation lands 89% of the way from a stranger to the
+target, and in a four-prompt cross test each generation was nearest its own
+prompt, 4 out of 4 — cloning genuinely works. But two generations made from
+*different* prompts score 0.939, essentially the same-speaker anchor. Distinct
+voices go in and come out sounding much more alike than they went in.
+
+In practice: a clone resembles its target, but put two clones side by side and
+they sound like relatives. If you need voices that are clearly distinguishable
+from each other, this model will disappoint you; if you need one voice that
+resembles one target, it does that.
 
 **Audio quality is capped by the corpus.** UTMOS 2.68 against 4.36 for the
 English model, because LEMAS audio is 16 kHz while Mimi runs at 24 kHz: there is

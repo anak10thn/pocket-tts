@@ -10,6 +10,17 @@ model_config: pocket_tts/config/english.yaml  # 6-layer student, n_bins already 
 model_overrides:
   flow_lm.lookup_table.tokenizer_path: data/tokenizer_id.model
 start_from_pretrained: false
+# 2.0 is the measured optimum, not a default carried over: swept on the teacher
+# at inference (where --cfg is still adjustable) over 1/2/3/4/6, it peaks there
+# on all three metrics at once and collapses above it --
+#   cfg 1.0  sim 0.927  median WER 16.67%  UTMOS 2.36  silent   0
+#   cfg 2.0  sim 0.936  median WER 15.38%  UTMOS 2.60  silent   2
+#   cfg 3.0  sim 0.922  median WER 23.08%  UTMOS 2.32  silent  20
+#   cfg 4.0  sim 0.884  median WER 47.06%  UTMOS 1.87  silent  57
+#   cfg 6.0  sim 0.823  median WER   100%  UTMOS 1.43  silent 124/153
+# So raising this will not tighten voice adherence; the clones sounding alike
+# comes from the data and the teacher's voice_dropout, not from guidance being
+# too weak.
 distill_cfg_coef: 2.0
 distill_teacher_config: pocket_tts/config/english.yaml
 distill_teacher_overrides:

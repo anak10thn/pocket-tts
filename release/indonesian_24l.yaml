@@ -1,4 +1,4 @@
-weights_path: hf://anak10thn/pocket-tts-indonesian/model.safetensors@c7bd102b65fb4908ea1d0abd7ec90c6b67e1961c
+weights_path: hf://anak10thn/pocket-tts-indonesian/24l/model.safetensors@f92bf272ff490a0a711613ba680bcdbcdd3a92c8
 
 default_temperature: 0.3
 flow_lm:
@@ -17,7 +17,7 @@ flow_lm:
     dim: 1024
     n_bins: 4000
     tokenizer: sentencepiece
-    tokenizer_path: hf://anak10thn/pocket-tts-indonesian/tokenizer.model@c7bd102b65fb4908ea1d0abd7ec90c6b67e1961c
+    tokenizer_path: hf://anak10thn/pocket-tts-indonesian/tokenizer.model@f92bf272ff490a0a711613ba680bcdbcdd3a92c8
 mimi:
   dtype: float32
   sample_rate: 24000

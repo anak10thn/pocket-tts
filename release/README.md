@@ -27,9 +27,9 @@ Two models in this repo. **Use the 6-layer one.**
 
 | | 6-layer student | 24-layer teacher |
 |---|---|---|
-| config | `indonesian_6l.yaml` | `config.yaml` |
+| config | `indonesian_6l.yaml` | `indonesian_24l.yaml` |
 | size | **438 MB** | 1.27 GB |
-| speed on CPU | **2.39x real time** | 0.74x |
+| speed on CPU | **2.23x real time** | 0.69x |
 | median WER | **12.50%** | 16.67% |
 | speaker similarity | **0.938** | 0.927 |
 | UTMOS | **2.68** | 2.36 |
@@ -39,13 +39,24 @@ The student was distilled from the teacher with guidance baked in
 pass that `pocket-tts generate` actually runs. The teacher only matches it with
 `--cfg 2.0`, which the shipped package cannot do — it has no `cfg_coef`
 anywhere. The teacher is kept for reproducibility and as a distillation
-starting point; there is no reason to run it.
+starting point; there is no reason to run it. The CPU figures are one paired
+run on the same machine and text: the student is usable without a GPU and the
+teacher is not.
+
+Repo layout: each model is a variant-named config beside its weights, and both
+share one tokenizer.
+
+```
+indonesian_6l.yaml   ->  6l/model.safetensors
+indonesian_24l.yaml  -> 24l/model.safetensors
+tokenizer.model          (shared)
+```
 
 ## Usage
 
 ```bash
 uvx pocket-tts generate \
-    --config hf://anak10thn/pocket-tts-indonesian/indonesian_6l.yaml \
+    --config hf://anak10thn/pocket-tts-indonesian/indonesian_6l.yaml@f44e4fc2b2fd79918667a1264e34505ea39f04fa \
     --voice your_voice.wav \
     --text "Selamat pagi, semoga hari Anda menyenangkan." \
     --eos-threshold -6.0 \
@@ -68,7 +79,7 @@ From Python:
 from pocket_tts import TTSModel
 
 model = TTSModel.load_model(
-    config="hf://anak10thn/pocket-tts-indonesian/indonesian_6l.yaml"
+    config="hf://anak10thn/pocket-tts-indonesian/indonesian_6l.yaml@f44e4fc2b2fd79918667a1264e34505ea39f04fa"
 )
 state = model.get_state_for_audio_prompt("your_voice.wav")
 audio = model.generate_audio(state, "Selamat pagi, semoga hari Anda menyenangkan.")

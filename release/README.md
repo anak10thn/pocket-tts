@@ -56,17 +56,20 @@ tokenizer.model          (shared)
 
 ```bash
 uvx pocket-tts generate \
-    --config hf://anak10thn/pocket-tts-indonesian/indonesian_6l.yaml@f44e4fc2b2fd79918667a1264e34505ea39f04fa \
+    --config hf://anak10thn/pocket-tts-indonesian/indonesian_6l.yaml@635cde7a28301861b120f57ec4dda8525073017c \
     --voice your_voice.wav \
     --text "Selamat pagi, semoga hari Anda menyenangkan." \
-    --eos-threshold -6.0 \
+    --eos-threshold -5.0 \
     --output-path out.wav
 ```
 
-**Pass `--eos-threshold -6.0`.** The CLI defaults to -4.0, which measures 18.18%
-median WER against -6.0's 12.50% on the same 153 items. Going further is worse
-in a way the WER hides: -7.0 scores a lower median (10.00%) while producing no
-audio at all for 18 of 153 inputs, against 2 at -6.0.
+**Pass `--eos-threshold -5.0`.** On the eval set -6.0 scores a slightly better
+median (12.50% against 15.38%), and an earlier version of this card recommended
+it on that basis. That was a mistake: the eval items are single short
+utterances, and long text is split into chunks, where -6.0 drops whole chunks.
+On an 87-word news passage it scored 21.35% against -5.0's **6.74%** — an entire
+sentence went missing. -5.0 is within a couple of points on short input, safe on
+long input, and produced no silent generations at all in the sweep.
 
 Omitting `--voice` is fine; it falls back to
 [alba's audio](https://huggingface.co/kyutai/tts-voices/blob/main/alba-mackenna/casual.wav),
@@ -79,7 +82,7 @@ From Python:
 from pocket_tts import TTSModel
 
 model = TTSModel.load_model(
-    config="hf://anak10thn/pocket-tts-indonesian/indonesian_6l.yaml@f44e4fc2b2fd79918667a1264e34505ea39f04fa"
+    config="hf://anak10thn/pocket-tts-indonesian/indonesian_6l.yaml@635cde7a28301861b120f57ec4dda8525073017c"
 )
 state = model.get_state_for_audio_prompt("your_voice.wav")
 audio = model.generate_audio(state, "Selamat pagi, semoga hari Anda menyenangkan.")
@@ -91,6 +94,12 @@ produce identical tokens.
 
 **Write numbers as words** (`lima belas`, not `15`). The training transcripts
 spell them out, so digits are out-of-vocabulary.
+
+Hyphens are fine: `anak-anak`, `tiba-tiba`, `rata-rata` all work. They did not
+until 2026-09-06 — the LEMAS transcripts write reduplication as separate words,
+so `-` never entered the vocabulary and came out as an invented word in the
+middle of the phrase. The tokenizer's normalizer now maps a hyphen to a space,
+which is exactly how the corpus wrote it.
 
 ## Evaluation
 
@@ -123,8 +132,9 @@ The student's full eos sweep, since the shape matters more than any single row:
 
 ### Long text
 
-One paired example, not a benchmark: a 73-word formal speech passage, same
-voice prompt and text for both models, each at its own best `--eos-threshold`.
+Two paired examples, not a benchmark. First, a 73-word formal speech passage,
+same voice prompt and text for both models, each at its own best
+`--eos-threshold`.
 
 | | student 6L | teacher 24L |
 |---|---|---|
@@ -153,6 +163,19 @@ teacher 24L: ...bukan hanya soal angka. Sampai kebesar, sampai kebasar, sampai k
 Both models can drop one item from a long enumeration — the student lost
 "sampai ke desa" here. Split lists into separate sentences if you need every
 item.
+
+Second, an 87-word news passage, student only, showing what the two fixes above
+are worth:
+
+| setting | WER |
+|---|---|
+| eos -6.0, hyphens unhandled (as this card first shipped) | 25.84% |
+| eos -6.0, hyphens replaced by hand | 21.35% |
+| **eos -5.0, hyphens typed normally (current)** | **6.74%** |
+
+6.74% is close to this eval corpus's ASR floor of 10.08%, on text far cleaner
+than the corpus — which is the honest reading of what this model does on
+well-written input.
 
 **Read the medians, not the corpus WER.** Corpus WER sums insertions over the
 list, so one generation that repeats itself past the end of the text outweighs
@@ -241,6 +264,7 @@ merged up to pocket-tts 3.1.0. It is kept on the fork rather than upstream by
 - Regional accents and languages other than Indonesian are not covered.
 - The exclamation mark `!` is out-of-vocabulary (the restored transcripts use
   `.` `,` `?` almost exclusively).
+- On long text the model occasionally drops one item from an enumeration.
 
 ## License and credits
 

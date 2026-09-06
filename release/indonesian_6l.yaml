@@ -21,7 +21,7 @@ flow_lm:
     dim: 1024
     n_bins: 4000
     tokenizer: sentencepiece
-    tokenizer_path: hf://anak10thn/pocket-tts-indonesian/tokenizer.model@547443371aa2c20dc1fc46afda7d7e61721cf037
+    tokenizer_path: hf://anak10thn/pocket-tts-indonesian/tokenizer.model@6a373f5f19c64f13adf7b813ffc6352bc7be944d
   #weights_path: final.safetensors
 
 mimi:

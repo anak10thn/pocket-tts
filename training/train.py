@@ -199,6 +199,7 @@ def main(config_path: str):
             # permutation from the top and bias coverage toward its head.
             seed=args.seed + start_step,
             shuffle=args.data.shuffle,
+            trail_sec=args.data.trail_sec,
             num_procs=args.data.loader_procs,
         )
     )
@@ -354,6 +355,7 @@ def validate(
             world_size,
             seed=0,
             shuffle=False,
+            trail_sec=args.data.trail_sec,
         )
     )
     autocast = torch.autocast(

@@ -23,6 +23,14 @@ class DataArgs:
     # so prompts vary in length and the target keeps most of the utterance.
     # <= 0 removes the window (any word boundary; full-prefix prompt).
     max_voice_prompt_sec: float = 5.0
+    # Audio kept after the last aligned word. It exists to keep trailing
+    # silence out of the target, since training on silence teaches the model to
+    # emit it instead of EOS -- but raise it for a corpus whose aligner ends
+    # early, or the target is cut off mid-speech and the model learns to stop
+    # too soon. On LEMAS Indonesian, speech continues past the last aligned
+    # word by 0.15s at the median and 0.52s at p90, so 0.2 truncates 38% of
+    # targets while the clips carry no trailing silence to guard against.
+    trail_sec: float = 0.2
     shuffle: bool = True
     # Loader subprocesses per rank. Each one is GIL-bound at ~90 samples/s from
     # network storage (extra IO threads do not help), and a rank consumes

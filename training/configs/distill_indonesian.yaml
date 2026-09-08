@@ -38,6 +38,14 @@ data:
   # one-time encode of 502 h here: distillation runs teacher and student every
   # step, so the GPU is the bottleneck, not the loader.
   precompute: true
+  # LEMAS's aligner ends early: speech continues past the last aligned word by
+  # 0.15s at the median and 0.52s at p90, while the clips themselves carry no
+  # trailing silence (the gap between where the signal goes quiet and the clip
+  # end has a median of -0.05s). The 0.2 default therefore truncates 38% of
+  # targets mid-speech, which is what taught the model to emit EOS early and
+  # forced --eos-threshold -5.0 against the upstream reference of -1.0. 0.6
+  # covers 99% of clips and re-admits no silence.
+  trail_sec: 0.6
 
 flow:
   type: lsd
@@ -54,7 +62,7 @@ optim:
   schedule: cosine
   warmup_steps: 1000
 
-run_dir: runs/distill_indonesian
+run_dir: runs/distill_id_trim
 # Teacher and student are both resident, so the micro-batch is half what the
 # 24L finetune used on this 15 GB T4. Effective batch stays 64.
 batch_size: 2

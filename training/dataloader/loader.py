@@ -60,6 +60,7 @@ class DataLoader:
         seed: int = 0,
         shuffle: bool = True,
         io_workers: int = 16,
+        trail_sec: float | None = None,
     ):
         self.jsonl = jsonl
         self.entries = load_entries(jsonl, rank, world_size)
@@ -69,6 +70,8 @@ class DataLoader:
         self.frame_rate = frame_rate
         self.max_duration_sec = max_duration_sec
         self.max_voice_prompt_sec = max_voice_prompt_sec
+        if trail_sec is not None:
+            self.TRAIL_SEC = trail_sec
         self.shuffle = shuffle
         self.io_workers = io_workers
         self._failures = 0

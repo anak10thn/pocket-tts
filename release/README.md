@@ -30,7 +30,7 @@ Two models in this repo. **Use the 6-layer one.**
 | config | `indonesian_6l.yaml` | `indonesian_24l.yaml` |
 | size | **438 MB** | 1.27 GB |
 | speed on CPU | **2.23x real time** | 0.69x |
-| median WER | **12.50%** | 16.67% |
+| median WER | **9.09%** | 16.67% |
 | speaker similarity | **0.938** | 0.927 | 
 | UTMOS | **2.68** | 2.36 |
 
@@ -56,20 +56,19 @@ tokenizer.model          (shared)
 
 ```bash
 uvx pocket-tts generate \
-    --config hf://anak10thn/pocket-tts-indonesian/indonesian_6l.yaml@635cde7a28301861b120f57ec4dda8525073017c \
+    --config hf://anak10thn/pocket-tts-indonesian/indonesian_6l.yaml@17257664e384561c957b02ac92edd1a24807f0e5 \
     --voice your_voice.wav \
     --text "Selamat pagi, semoga hari Anda menyenangkan." \
-    --eos-threshold -5.0 \
+    --eos-threshold -6.0 \
     --output-path out.wav
 ```
 
-**Pass `--eos-threshold -5.0`.** On the eval set -6.0 scores a slightly better
-median (12.50% against 15.38%), and an earlier version of this card recommended
-it on that basis. That was a mistake: the eval items are single short
-utterances, and long text is split into chunks, where -6.0 drops whole chunks.
-On an 87-word news passage it scored 21.35% against -5.0's **6.74%** — an entire
-sentence went missing. -5.0 is within a couple of points on short input, safe on
-long input, and produced no silent generations at all in the sweep.
+**Pass `--eos-threshold -6.0`.** It is the best value on the eval set (9.09%
+median against the CLI default -4.0's 13.33%) and on long text (6.74% on an
+87-word news passage). Earlier releases of this model needed two different
+values for those two cases -- -6.0 was best on short input but dropped whole
+chunks of long text -- and that split is gone since the retrain described
+below.
 
 Omitting `--voice` is fine; it falls back to
 [alba's audio](https://huggingface.co/kyutai/tts-voices/blob/main/alba-mackenna/casual.wav),
@@ -82,7 +81,7 @@ From Python:
 from pocket_tts import TTSModel
 
 model = TTSModel.load_model(
-    config="hf://anak10thn/pocket-tts-indonesian/indonesian_6l.yaml@635cde7a28301861b120f57ec4dda8525073017c"
+    config="hf://anak10thn/pocket-tts-indonesian/indonesian_6l.yaml@17257664e384561c957b02ac92edd1a24807f0e5"
 )
 state = model.get_state_for_audio_prompt("your_voice.wav")
 audio = model.generate_audio(state, "Selamat pagi, semoga hari Anda menyenangkan.")
@@ -111,24 +110,50 @@ Indonesian, language-agnostic normalization, `--temp 0.3 --n-steps 1
 
 | | teacher 24L (eos -5.0) | **student 6L (eos -6.0)** |
 |---|---|---|
-| median per-item WER | 16.67% | **12.50%** |
-| items over 50% WER | 10 / 153 | **7 / 153** |
-| silent generations | 0 | 2 |
-| speaker similarity | 0.927 | **0.938** |
+| median per-item WER | 16.67% | **9.09%** |
+| items over 50% WER | 10 / 153 | **4 / 153** |
+| silent generations | 0 | **0** |
+| speaker similarity | 0.927 | **0.939** |
 | UTMOS | 2.36 | **2.68** |
-| corpus WER | **20.55%** | 24.44% |
+| corpus WER | 20.55% | **13.48%** |
 
 The student's full eos sweep, since the shape matters more than any single row:
 
-| eos | median WER | over 50% | silent | no-EOS | sim | UTMOS |
-|---|---|---|---|---|---|---|
-| -2.0 | 30.00% | 30 | 0 | 43 | 0.916 | 2.26 |
-| -3.0 | 22.22% | 26 | 0 | 14 | 0.927 | 2.43 |
-| -4.0 (CLI default) | 18.18% | 16 | 0 | 0 | 0.936 | 2.61 |
-| -5.0 | 15.38% | 16 | 0 | 0 | 0.936 | 2.64 |
-| **-6.0** | **12.50%** | **7** | 2 | 0 | **0.938** | 2.68 |
-| -7.0 | 10.00% | 22 | 18 | 0 | 0.932 | 2.73 |
-| -8.0 | 45.45% | 71 | 63 | 0 | 0.932 | 2.79 |
+| eos | median WER | corpus WER | over 50% | silent | no-EOS | sim | UTMOS |
+|---|---|---|---|---|---|---|---|
+| -1.0 | 18.18% | 74.52% | 26 | 0 | 19 | 0.919 | 2.48 |
+| -2.0 | 13.33% | 63.95% | 12 | 0 | 9 | 0.925 | 2.53 |
+| -3.0 | 16.67% | 48.49% | 18 | 0 | 0 | 0.932 | 2.64 |
+| -4.0 (CLI default) | 13.33% | 19.40% | 8 | 0 | 0 | 0.939 | 2.64 |
+| -5.0 | 12.50% | 28.16% | 6 | 0 | 0 | 0.937 | 2.68 |
+| **-6.0** | **9.09%** | **13.48%** | **4** | **0** | 0 | **0.939** | **2.68** |
+
+### What the retrain changed
+
+The published student was retrained on 2026-09-10 after finding that the
+training targets were being cut off mid-word. The loader trims each target to
+the last aligned word plus a 0.2s tail, which is right for a corpus padded with
+silence -- but LEMAS clips are cropped tight around speech (the gap between
+where the signal goes quiet and the clip end has a median of -0.05s) while its
+aligner ends early, with speech continuing past the last aligned word by 0.15s
+at the median and 0.52s at p90. So 0.2s covered 62% of clips and truncated the
+rest. Raising it to 0.6s covers 99%.
+
+| | before | after |
+|---|---|---|
+| median WER | 12.50% | **9.09%** |
+| corpus WER | 24.44% | **13.48%** |
+| items over 50% | 7 | **4** |
+| silent generations | 2 | **0** |
+| 87-word passage at eos -6.0 | 21.35% | **6.74%** |
+| speaker similarity / UTMOS | 0.938 / 2.68 | 0.939 / 2.68 |
+
+One prediction in this it got wrong, recorded because it was wrong: the guess
+was that fixing truncated targets would move the eos optimum back toward the
+upstream reference of -1.0. It did not. -6.0 is still best, and -1.0 is bad for
+the opposite reason -- the model runs past the text on 19 of 153 items. The fix
+worked through accuracy and stability, not through EOS calibration, and why this
+model wants -6.0 is still unexplained.
 
 ### Long text
 
@@ -171,7 +196,8 @@ are worth:
 |---|---|
 | eos -6.0, hyphens unhandled (as this card first shipped) | 25.84% |
 | eos -6.0, hyphens replaced by hand | 21.35% |
-| **eos -5.0, hyphens typed normally (current)** | **6.74%** |
+| eos -5.0, hyphens typed normally, previous weights | 6.74% |
+| **eos -6.0, current weights** | **6.74%** |
 
 6.74% is close to this eval corpus's ASR floor of 10.08%, on text far cleaner
 than the corpus — which is the honest reading of what this model does on
@@ -232,8 +258,11 @@ training does not.
   the new tokenizer, backbone transferred. Stopped at step 87,500 of a planned
   250,000 once it plateaued — validation loss was flat from step 42,500 on.
 - **Student**: depth distillation to 6 layers with `distill_cfg_coef: 2.0`,
-  50,000 steps, lr 4e-4 cosine. Validation loss was still falling at the end
-  (0.0715 to 0.0126), so it is not saturated.
+  50,000 steps, lr 4e-4 cosine, `data.trail_sec: 0.6`. Validation loss was
+  still falling at the end, so it is not saturated. `distill_cfg_coef` is the
+  measured optimum, not a default: swept on the teacher over 1/2/3/4/6 it peaks
+  at 2.0 on similarity, WER and UTMOS at once, and at 6.0 the model is silent
+  on 124 of 153 inputs.
 - **Data**: 502 h / 298,652 utterances, one shard of LEMAS Indonesian filtered
   to duration >= 4 s and mean alignment confidence >= 0.8, split by recording.
 - **Transcripts**: LEMAS Indonesian text is ALL CAPS with no punctuation.

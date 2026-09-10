@@ -1,6 +1,6 @@
 # sig: a0ac5076.yaml
 
-weights_path: hf://anak10thn/pocket-tts-indonesian/6l/model.safetensors@547443371aa2c20dc1fc46afda7d7e61721cf037
+weights_path: hf://anak10thn/pocket-tts-indonesian/6l/model.safetensors@a0cd8c1f1851fa32e5b31a948fa130193b125670
 # Human evals preferred this model at 0.3 (equal WER/similarity/speech rate).
 default_temperature: 0.3
 
